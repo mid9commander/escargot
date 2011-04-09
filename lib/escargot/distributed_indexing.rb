@@ -12,7 +12,7 @@ module Escargot
 
       index_version = model.create_index_version
 
-      model.find_in_batches(:select => model.primary_key) do |batch|
+      model.find_each(:select => model.primary_key) do |batch|
         Escargot.queue_backend.enqueue(IndexDocuments, model.to_s, batch.map(&:id), index_version)
       end
 
@@ -50,7 +50,7 @@ module Escargot
     class DeployNewVersion
       @queue = :indexing
       def self.perform(index, index_version)
-        $elastic_search_client.deploy_index_version(index, index_version)
+        Escargot.connection.deploy_index_version(index, index_version)
       end
     end
   end

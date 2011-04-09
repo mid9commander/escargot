@@ -42,7 +42,7 @@ module Escargot
         send :include, InstanceMethods
         @index_name = options[:index_name] || self.name.underscore.gsub(/\//,'-')
         @update_index_policy = options.include?(:updates) ? options[:updates] : :immediate
-        
+
         if @update_index_policy
           after_save :update_index
           after_destroy :delete_from_index
@@ -54,10 +54,10 @@ module Escargot
       def search(query, options={})
         Escargot.search(query, options.merge({:index => self.index_name, :type => elastic_search_type}), true)
       end
-      
+
       def search_hits(query, options = {})
         Escargot.search_hits(query, options.merge({:index => self.index_name, :type => elastic_search_type}), true)
-      end  
+      end
 
       def search_count(query = "*", options = {})
         Escargot.search_count(query, options.merge({:index => self.index_name, :type => elastic_search_type}), true)
@@ -66,7 +66,7 @@ module Escargot
       def facets(fields_list, options = {})
         size = options.delete(:size) || 10
         fields_list = [fields_list] unless fields_list.kind_of?(Array)
-        
+
         if !options[:query]
           options[:query] = {:match_all => true}
         elsif options[:query].kind_of?(String)
@@ -78,9 +78,9 @@ module Escargot
           options[:facets][field] = {:terms => {:field => field, :size => size}}
         end
 
-        hits = $elastic_search_client.search(options, {:index => self.index_name, :type => elastic_search_type})
+        hits = Escargot.connection.search(options, {:index => self.index_name, :type => elastic_search_type})
         out = {}
-        
+
         fields_list.each do |field|
           out[field.to_sym] = {}
           hits.facets[field.to_s]["terms"].each do |term|
@@ -96,47 +96,47 @@ module Escargot
       #
       # http://www.elasticsearch.com/docs/elasticsearch/rest_api/admin/indices/refresh/
       def refresh_index(index_version = nil)
-        $elastic_search_client.refresh(index_version || index_name)
+        Escargot.connection.refresh(index_version || index_name)
       end
-      
+
       # creates a new index version for this model and sets the mapping options for the type
       def create_index_version
-        index_version = $elastic_search_client.create_index_version(@index_name, @index_options)
+        index_version = Escargot.connection.create_index_version(@index_name, @index_options)
         if @mapping
-          $elastic_search_client.update_mapping(@mapping, :index => index_version, :type => elastic_search_type)
+          Escargot.connection.update_mapping(@mapping, :index => index_version, :type => elastic_search_type)
         end
         index_version
       end
-      
+
       # deletes all index versions for this model and the alias (if exist)
       def delete_index
         # set current version to delete alias later
-        current_version = $elastic_search_client.current_index_version(index_name)
+        current_version = Escargot.connection.current_index_version(index_name)
 
         # deletes any index version and the alias
-        $elastic_search_client.index_versions(index_name).each{|index_version|
-          $elastic_search_client.alias_index(:remove => {index_version => index_name}) if (index_version == current_version)
-          $elastic_search_client.delete_index(index_version)
+        Escargot.connection.index_versions(index_name).each{|index_version|
+          Escargot.connection.alias_index(:remove => {index_version => index_name}) if (index_version == current_version)
+          Escargot.connection.delete_index(index_version)
         }
 
         # and delete the index itself if it exists
         begin
-          $elastic_search_client.delete_index(index_name)
+          Escargot.connection.delete_index(index_name)
         rescue ElasticSearch::RequestError
           # it's ok, this means that the index doesn't exist
         end
       end
-      
+
       def delete_id_from_index(id, options = {})
         options[:index] ||= self.index_name
         options[:type]  ||= elastic_search_type
-        $elastic_search_client.delete(id.to_s, options)
+        Escargot.connection.delete(id.to_s, options)
       end
-      
+
       def optimize_index
-        $elastic_search_client.optimize(index_name)
+        Escargot.connection.optimize(index_name)
       end
-      
+
       private
         def elastic_search_type
           self.name.underscore.singularize.gsub(/\//,'-')
@@ -174,18 +174,18 @@ module Escargot
         options[:index] ||= self.class.index_name
         options[:type]  ||= self.class.name.underscore.singularize.gsub(/\//,'-')
         options[:id]    ||= self.id.to_s
-        
-        $elastic_search_client.index(
+
+        Escargot.connection.index(
           self.respond_to?(:indexed_json_document) ? self.indexed_json_document : self.to_json,
           options
         )
-        
+
         ## !!!!! passing :refresh => true should make ES auto-refresh only the affected
         ## shards but as of Oct 25 2010 with ES 0.12 && rubberband 0.0.2 that's not the case
         if options[:refresh]
           self.class.refresh_index(options[:index])
         end
-          
+
       end
 
     end
